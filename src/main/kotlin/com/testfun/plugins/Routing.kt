@@ -2,6 +2,7 @@
 
 package com.testfun.plugins
 
+import com.testfun.plugins.anagramer.configureAnagramer
 import io.ktor.client.*
 import io.ktor.http.*
 import io.ktor.server.application.*

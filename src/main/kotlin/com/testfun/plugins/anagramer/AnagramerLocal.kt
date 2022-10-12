@@ -1,10 +1,11 @@
 @file:OptIn(KtorExperimentalLocationsAPI::class)
 
-package com.testfun.plugins
+package com.testfun.plugins.anagramer
 
 import io.ktor.client.*
 import io.ktor.server.application.*
 import io.ktor.server.locations.*
+import io.ktor.server.locations.post
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.GlobalScope
@@ -17,6 +18,7 @@ import java.util.stream.Collectors
 
 fun Application.configureAnagramer() {
     val dict = getDictionaryList()
+    AnagramerDb.init()
 
     routing {
         get<RandomWord> { word ->
@@ -35,6 +37,10 @@ fun Application.configureAnagramer() {
             println(it)
             val definition = getDefinition(it.word)
             call.respond(Definition(it.word, definition))
+        }
+
+        post<NewHighScore> {
+            call.respond(AnagramerDb.insertNewScore(it.name, it.score))
         }
     }
 }
@@ -57,6 +63,10 @@ data class RandomWord(val size: Int, val minimumSize: Int = 3)
 @Serializable
 @Location("wordDefinition/{word}")
 data class WordDefinition(val word: String)
+
+@Serializable
+@Location("highScore/{name}/{score}")
+data class NewHighScore(val name: String, val score: Int)
 
 @Serializable
 data class Definition(val word: String, val definition: String)
