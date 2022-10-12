@@ -16,9 +16,7 @@ import java.io.InputStreamReader
 import java.util.stream.Collectors
 
 fun Application.configureAnagramer() {
-    val dict = File("/usr/share/dict/words")
-        .readLines()
-        .filterNot { it.contains("-") }
+    val dict = getDictionaryList()
 
     routing {
         get<RandomWord> { word ->
@@ -35,7 +33,8 @@ fun Application.configureAnagramer() {
 
         get<WordDefinition> {
             println(it)
-            call.respond(Definition(it.word, RunPython.runPythonCodeAsync("get_definition.py", it.word).await()))
+            val definition = getDefinition(it.word)
+            call.respond(Definition(it.word, definition))
         }
     }
 }
@@ -74,4 +73,14 @@ object RunPython {
         val reader = BufferedReader(InputStreamReader(process.inputStream))
         reader.lines().collect(Collectors.joining("\n"))
     }
+}
+
+private fun getDictionaryList(): List<String> {
+    return File("/usr/share/dict/words")
+        .readLines()
+        .filterNot { it.contains("-") }
+}
+
+private suspend fun getDefinition(word: String): String {
+    return RunPython.runPythonCodeAsync("get_definition.py", word).await()
 }

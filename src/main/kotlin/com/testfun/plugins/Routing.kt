@@ -10,15 +10,9 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
-import java.io.File
 import java.util.*
 
 fun Application.configureRouting() {
-    val client = HttpClient()
-    val dict = File("/usr/share/dict/words")
-        .readLines()
-        .filterNot { it.contains("-") }
-
     install(Locations)
 
     routing {
