@@ -39,6 +39,10 @@ fun Application.configureAnagramer() {
             call.respond(Definition(it.word, definition))
         }
 
+        get("/highScores") {
+            call.respond(AnagramerDb.getHighScores())
+        }
+
         post<NewHighScore> {
             call.respond(AnagramerDb.insertNewScore(it.name, it.score))
         }

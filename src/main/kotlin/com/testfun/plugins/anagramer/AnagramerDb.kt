@@ -55,6 +55,17 @@ object AnagramerDb {
         }
     }
 
+    suspend fun getHighScores(): Scores {
+        return newSuspendedTransaction(db = db) {
+            Scores(
+                PlayerHighScore.selectAll()
+                    .orderBy(PlayerHighScore.score to SortOrder.DESC)
+                    .limit(10)
+                    .map { NewHighScore(it[PlayerHighScore.name], it[PlayerHighScore.score]) }
+            )
+        }
+    }
+
 }
 
 object PlayerHighScore : IntIdTable() {
