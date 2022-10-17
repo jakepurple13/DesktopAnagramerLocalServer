@@ -12,11 +12,15 @@ import io.ktor.server.sessions.*
 import io.ktor.server.websocket.*
 import io.ktor.util.*
 import io.ktor.websocket.*
+import io.ktor.websocket.serialization.*
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.awt.Color
+import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.time.Duration
 import java.util.*
@@ -137,9 +141,12 @@ class AnagramerChat {
         prettyPrint = true
         isLenient = true
         encodeDefaults = true
+
     }
 
     private val faker = Faker().apply { unique.configuration { enable(this@apply::funnyName) } }
+
+    private val converter = KotlinxWebsocketSerializationConverter(json)
 
     /**
      * Handles that a member identified with a session id and a socket joined.
@@ -166,8 +173,18 @@ class AnagramerChat {
         val list = members.computeIfAbsent(member) { CopyOnWriteArrayList<WebSocketSession>() }
         list.add(socket)
 
-        socket.send(name.name)
-        socket.send(json.encodeToString(memberNames.map { it.value.name }))
+        socket.sendSerializedBase(
+            SetupMessage(name, userColor = Color(0x0000ff).rgb),
+            converter,
+            Charset.defaultCharset()
+        )
+        //socket.send(name.name)
+        //socket.send(json.encodeToString(memberNames.map { it.value.name }))
+        /*socket.sendSerializedBase(
+            UserListMessage(name, userList = memberNames.values.toList()),
+            converter,
+            Charset.defaultCharset()
+        )*/
 
         // Only when joining the first socket for a member notifies the rest of the users.
         if (list.size == 1) {
@@ -182,39 +199,6 @@ class AnagramerChat {
             //socket.send(CardType(Type.UPDATE, message.toJson()).toFrameJson())
         }*/
     }
-
-    /*suspend fun sendCards(sender: String, cardPlay: CardType) {
-        members[sender]?.send(CardType(Type.GET_HAND, scores.getWinningHand(cardPlay.any.toJson().fromJson<List<Card>>()!!)).toFrameJson())
-    }
-
-    suspend fun drawCards(sender: String, cardPlay: CardType) {
-        members[sender]?.send(CardType(Type.DRAW_CARDS, deck.draw(cardPlay.any.toJson().fromJson<Int>()!!)).toFrameJson())
-    }
-
-    suspend fun submitHand(sender: String, cardPlay: CardType) {
-        memberNames[sender]?.hand = cardPlay.getAnyType<List<Card>>()!!
-        memberNames[sender]?.submitted = true
-        submittedHandCheck()
-    }
-
-    private suspend fun submittedHandCheck() {
-        if (memberNames.all { it.value.submitted } && memberNames.isNotEmpty()) {
-            //val otherHands = memberNames.elements().toList().groupBy { scores.getWinningHand(it.hand) }
-            //val highest = otherHands.maxBy { it.key.defaultWinning }!!
-            *//*val high = if (highest.value.size > 1)
-                highest.key to listOf(highest.value.maxBy { it.hand.map(Card::value).maxBy { if (it == 1) 14 else it }!! }!!)
-            else highest.toPair()*//*
-            val high = findBestHand(memberNames.elements().toList())
-            val allHands = memberNames.elements().toList().sortedByDescending { scores.getWinningHand(it.hand).defaultWinning }.joinToString("\n") {
-                "${it.name} had a ${scores.getWinningHand(it.hand).stringName} with: ${it.hand.map { "${it.symbol}${it.suit.unicodeSymbol}" }}"
-            }
-            broadcast("${high.second.joinToString(", ") { it.name }} won with a ${high.first.stringName}\n$allHands")
-            memberNames.forEach {
-                it.value.submitted = false
-                it.value.hand = emptyList()
-            }
-        }
-    }*/
 
     /**
      * Handles a [member] identified by its session id renaming [to] a specific name.
@@ -262,7 +246,7 @@ class AnagramerChat {
         val name = memberNames[sender]?.name ?: sender
         //val formatted = "$message"
         // Sends this pre-formatted message to all the members in the server.
-        broadcast(sender, message, MessageType.MESSAGE)
+        broadcastMessage(sender, message)
     }
 
     private suspend fun somethingWentWrong(sender: String, message: String = "Something went wrong") {
@@ -271,8 +255,39 @@ class AnagramerChat {
     }
 
     enum class MessageType {
-        MESSAGE, SERVER, INFO, TYPING_INDICATOR
+        MESSAGE, SERVER, INFO, TYPING_INDICATOR, SETUP
     }
+
+    @Serializable
+    sealed class Message {
+        abstract val user: ChatUser
+        abstract val messageType: MessageType
+        val time: String = SimpleDateFormat("MM/dd hh:mm a").format(System.currentTimeMillis())
+    }
+
+    @Serializable
+    @SerialName("MessageMessage")
+    data class MessageMessage(
+        override val user: ChatUser,
+        val message: String,
+        override val messageType: MessageType = MessageType.MESSAGE
+    ) : Message()
+
+    @Serializable
+    @SerialName("SetupMessage")
+    data class SetupMessage(
+        override val user: ChatUser,
+        override val messageType: MessageType = MessageType.SETUP,
+        val userColor: Int,
+    ) : Message()
+
+    @Serializable
+    @SerialName("UserListMessage")
+    data class UserListMessage(
+        override val user: ChatUser,
+        override val messageType: MessageType = MessageType.INFO,
+        val userList: List<ChatUser>
+    ) : Message()
 
     @Serializable
     data class SendMessage(
@@ -297,6 +312,12 @@ class AnagramerChat {
         }
     }
 
+    private suspend fun broadcast(message: Message) {
+        members.values.forEach { socket ->
+            socket.send(message)
+        }
+    }
+
     private suspend fun broadcastUserUpdate() {
         /*members.values.forEach { sockets ->
             sockets.send(Frame.Text(SendMessage(
@@ -312,8 +333,11 @@ class AnagramerChat {
             MessageType.INFO,
             //
         )
+
+        val f = UserListMessage(ChatUser("Server"), userList = memberNames.values.toList())
+
         members.values.forEach { sockets ->
-            sockets.send(Frame.Text(json.encodeToString(message)))
+            sockets.send(f)
         }
     }
 
@@ -351,6 +375,19 @@ class AnagramerChat {
         }
     }
 
+    private suspend fun broadcastMessage(
+        sender: String,
+        message: String,
+    ) {
+        //val name = memberNames[sender]?.name ?: sender
+        //val text = "${SimpleDateFormat("MM/dd hh:mm a").format(System.currentTimeMillis())} $message"
+        val sendMessage = MessageMessage(
+            memberNames.values.find { it.name == sender } ?: ChatUser("Server"),
+            message
+        )
+        broadcast(sendMessage)
+    }
+
     /**
      * Sends a [message] to a list of [this] [WebSocketSession].
      */
@@ -358,6 +395,20 @@ class AnagramerChat {
         forEach {
             try {
                 it.send(frame.copy())
+            } catch (t: Throwable) {
+                try {
+                    it.close(CloseReason(CloseReason.Codes.PROTOCOL_ERROR, ""))
+                } catch (ignore: ClosedSendChannelException) {
+                    // at some point it will get closed
+                }
+            }
+        }
+    }
+
+    private suspend fun List<WebSocketSession>.send(frame: Message) {
+        forEach {
+            try {
+                it.sendSerializedBase(frame, converter, Charset.defaultCharset())
             } catch (t: Throwable) {
                 try {
                     it.close(CloseReason(CloseReason.Codes.PROTOCOL_ERROR, ""))
