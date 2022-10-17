@@ -47,6 +47,8 @@ fun Application.configureAnagramer() {
             call.respond(AnagramerDb.insertNewScore(it.name, it.score))
         }
     }
+
+    configureAnagramerChat()
 }
 
 private fun compare(word: String, anagram: String): Boolean {
