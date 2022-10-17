@@ -334,7 +334,11 @@ class AnagramerChat {
     ) {
         //val name = memberNames[sender]?.name ?: sender
         //val text = "${SimpleDateFormat("MM/dd hh:mm a").format(System.currentTimeMillis())} $message"
-        val sendMessage = SendMessage(memberNames[sender] ?: ChatUser("Server"), message, type)
+        val sendMessage = SendMessage(
+            memberNames.values.find { it.name == sender } ?: ChatUser("Server"),
+            message,
+            type
+        )
         broadcast(sendMessage.toJson(json))
         //prettyLog(sendMessage.toJson())
         if (type != MessageType.TYPING_INDICATOR) {
