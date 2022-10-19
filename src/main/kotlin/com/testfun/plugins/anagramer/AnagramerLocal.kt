@@ -46,6 +46,12 @@ fun Application.configureAnagramer() {
         post<NewHighScore> {
             call.respond(AnagramerDb.insertNewScore(it.name, it.score))
         }
+
+        get("/wordOfTheDay") {
+            val word = dict.random()
+            val definition = getDefinition(word)
+            call.respond(Definition(word, definition))
+        }
     }
 
     configureAnagramerChat()
