@@ -31,19 +31,18 @@ import java.util.concurrent.atomic.AtomicInteger
 fun Application.configureAnagramerChat() {
 
     val chat = AnagramerChat()
+    val json = Json {
+        prettyPrint = true
+        isLenient = true
+        encodeDefaults = true
+    }
 
     install(WebSockets) {
         pingPeriod = Duration.ofSeconds(15)
         timeout = Duration.ofSeconds(15)
         maxFrameSize = Long.MAX_VALUE
         masking = false
-        contentConverter = KotlinxWebsocketSerializationConverter(
-            Json {
-                prettyPrint = true
-                isLenient = true
-                encodeDefaults = true
-            }
-        )
+        contentConverter = KotlinxWebsocketSerializationConverter(json)
     }
 
     intercept(Plugins) {
@@ -82,11 +81,21 @@ fun Application.configureAnagramerChat() {
             chat.message(f.name, f.message)
             call.respond(HttpStatusCode.OK, f)
         }
+
+        post("/anagramerTyping") {
+            val f = call.receive<TypingIndicator>()
+            println("message: $f")
+            chat.isTyping(f.user.name, f)
+            call.respond(HttpStatusCode.OK, f)
+        }
     }
 }
 
 @Serializable
 data class PostMessage(val name: String, val message: String)
+
+@Serializable
+class TypingIndicator(val user: ChatUser, val isTyping: Boolean)
 
 @Serializable
 data class ChatUser(
@@ -130,6 +139,8 @@ class AnagramerChat {
      * There might be several opened sockets for the same client.
      */
     private val members = ConcurrentHashMap<String, MutableList<WebSocketSession>>()
+
+    private val peopleWhoAreTyping = ConcurrentHashMap<String, Boolean>()
 
     /**
      * A list of the latest messages sent to the server, so new members can have a bit context of what
@@ -219,6 +230,8 @@ class AnagramerChat {
         val connections = members[member]
         connections?.remove(socket)
 
+        peopleWhoAreTyping.remove(member)
+
         // If no more sockets are connected for this member, let's remove it from the server
         // and notify the rest of the users about this event.
         if (connections != null && connections.isEmpty()) {
@@ -227,6 +240,21 @@ class AnagramerChat {
             //broadcast("server", "Member left: $name.", MessageType.SERVER)
             //broadcastUserUpdate()
         }
+    }
+
+    suspend fun isTyping(sender: String, typingIndicator: TypingIndicator) {
+        peopleWhoAreTyping[sender] = typingIndicator.isTyping
+        val people = peopleWhoAreTyping
+            .filter { it.value }
+            .map { it.key }
+        val peopleToShow = if (people.size > 3) "People" else people.joinToString(", ")
+        val check = typingIndicator.isTyping || people.isNotEmpty()
+        val text = if (check) "$peopleToShow are typing..." else ""
+        val sendMessage = TypingIndicatorMessage(
+            user = ChatUser("Server"),
+            text = text,
+        )
+        members.forEach { it.value.send(sendMessage) }
     }
 
     /**
@@ -263,6 +291,7 @@ class AnagramerChat {
         abstract val user: ChatUser
         abstract val messageType: MessageType
         val time: String = SimpleDateFormat("MM/dd hh:mm a").format(System.currentTimeMillis())
+        fun toJson(json: Json) = json.encodeToString(this)
     }
 
     @Serializable
@@ -287,6 +316,14 @@ class AnagramerChat {
         override val user: ChatUser,
         override val messageType: MessageType = MessageType.INFO,
         val userList: List<ChatUser>
+    ) : Message()
+
+    @Serializable
+    @SerialName("TypingIndicatorMessage")
+    data class TypingIndicatorMessage(
+        override val user: ChatUser,
+        override val messageType: MessageType = MessageType.TYPING_INDICATOR,
+        val text: String
     ) : Message()
 
     @Serializable
