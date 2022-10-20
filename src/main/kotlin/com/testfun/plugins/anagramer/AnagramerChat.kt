@@ -249,7 +249,7 @@ class AnagramerChat {
             .map { it.key }
         val peopleToShow = if (people.size > 3) "People" else people.joinToString(", ")
         val check = typingIndicator.isTyping || people.isNotEmpty()
-        val text = if (check) "$peopleToShow are typing..." else ""
+        val text = if (check) "$peopleToShow ${if (people.size > 1) "are" else "is"} typing..." else ""
         val sendMessage = TypingIndicatorMessage(
             user = ChatUser("Server"),
             text = text,
