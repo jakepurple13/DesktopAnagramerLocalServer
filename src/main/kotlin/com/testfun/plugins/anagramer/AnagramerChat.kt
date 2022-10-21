@@ -13,6 +13,7 @@ import io.ktor.server.websocket.*
 import io.ktor.util.*
 import io.ktor.websocket.*
 import io.ktor.websocket.serialization.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.SerialName
@@ -149,10 +150,8 @@ class AnagramerChat {
     private val lastMessages = LinkedList<SendMessage>()
 
     private val json = Json {
-        prettyPrint = true
         isLenient = true
         encodeDefaults = true
-
     }
 
     private val faker = Faker().apply { unique.configuration { enable(this@apply::funnyName) } }
@@ -212,17 +211,6 @@ class AnagramerChat {
     }
 
     /**
-     * Handles a [member] identified by its session id renaming [to] a specific name.
-     */
-    suspend fun memberRenamed(member: String, to: String) {
-        // Re-sets the member name.
-        println("Member renamed: From: ${memberNames[member]?.name} To: $to")
-        memberNames[member]?.name = to
-        // Notifies everyone in the server about this change.
-        //broadcastUserUpdate()
-    }
-
-    /**
      * Handles that a [member] with a specific [socket] left the server.
      */
     suspend fun memberLeft(member: String, socket: WebSocketSession) {
@@ -231,6 +219,7 @@ class AnagramerChat {
         connections?.remove(socket)
 
         peopleWhoAreTyping.remove(member)
+        sendTyping { it.isNotEmpty() }
 
         // If no more sockets are connected for this member, let's remove it from the server
         // and notify the rest of the users about this event.
@@ -244,11 +233,15 @@ class AnagramerChat {
 
     suspend fun isTyping(sender: String, typingIndicator: TypingIndicator) {
         peopleWhoAreTyping[sender] = typingIndicator.isTyping
+        sendTyping { typingIndicator.isTyping || it.isNotEmpty() }
+    }
+
+    private suspend fun sendTyping(peopleCheck: (List<String>) -> Boolean) {
         val people = peopleWhoAreTyping
             .filter { it.value }
             .map { it.key }
         val peopleToShow = if (people.size > 3) "People" else people.joinToString(", ")
-        val check = typingIndicator.isTyping || people.isNotEmpty()
+        val check = peopleCheck(people)
         val text = if (check) "$peopleToShow ${if (people.size > 1) "are" else "is"} typing..." else ""
         val sendMessage = TypingIndicatorMessage(
             user = ChatUser("Server"),
@@ -258,28 +251,14 @@ class AnagramerChat {
     }
 
     /**
-     * Handles the 'who' command by sending the member a list of all members names in the server.
-     */
-    suspend fun who(sender: String) {
-        val text = memberNames.values.joinToString(prefix = "[server::who] ") { it.name }
-        val sendMessage = SendMessage(ChatUser("Server"), text, MessageType.SERVER)
-        members[sender]?.send(Frame.Text(sendMessage.toJson(json)))
-    }
-
-    /**
      * Handles a [message] sent from a [sender] by notifying the rest of the users.
      */
     suspend fun message(sender: String, message: String) {
         // Pre-format the message to be sent, to prevent doing it for all the users or connected sockets.
-        val name = memberNames[sender]?.name ?: sender
+        //val name = memberNames[sender]?.name ?: sender
         //val formatted = "$message"
         // Sends this pre-formatted message to all the members in the server.
         broadcastMessage(sender, message)
-    }
-
-    private suspend fun somethingWentWrong(sender: String, message: String = "Something went wrong") {
-        val sendMessage = SendMessage(ChatUser("Server"), message, MessageType.SERVER)
-        members[sender]?.send(Frame.Text(sendMessage.toJson(json)))
     }
 
     enum class MessageType {
@@ -336,18 +315,14 @@ class AnagramerChat {
         fun toJson(json: Json) = json.encodeToString(this)
     }
 
-    suspend fun sendServerMessage(msg: String) {
-        broadcast(SendMessage(ChatUser("Server"), msg, MessageType.SERVER).toJson(json))
-    }
-
     /**
      * Sends a [message] to all the members in the server, including all the connections per member.
      */
-    private suspend fun broadcast(message: String) {
+    /*private suspend fun broadcast(message: String) {
         members.values.forEach { socket ->
             socket.send(Frame.Text(message))
         }
-    }
+    }*/
 
     private suspend fun broadcast(message: Message) {
         members.values.forEach { socket ->
@@ -364,12 +339,12 @@ class AnagramerChat {
                 memberNames.values.joinToString("\n") { it.name }
             ).toJson()))
         }*/
-        val message = SendMessage(
+        /*val message = SendMessage(
             ChatUser("Server"),
             "Current User: ${memberNames.values.joinToString(",") { it.name }}",
             MessageType.INFO,
             //
-        )
+        )*/
 
         val f = UserListMessage(ChatUser("Server"), userList = memberNames.values.toList())
 
@@ -388,7 +363,7 @@ class AnagramerChat {
     /**
      * Sends a [message] coming from a [sender] to all the members in the server, including all the connections per member.
      */
-    private suspend fun broadcast(
+    /*private suspend fun broadcast(
         sender: String,
         message: String,
         type: MessageType = MessageType.MESSAGE,
@@ -410,7 +385,7 @@ class AnagramerChat {
                 }
             }
         }
-    }
+    }*/
 
     private suspend fun broadcastMessage(
         sender: String,
